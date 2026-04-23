@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}{{ action }} Expense – ReceiptAI{% endblock %}
+{% block page_title %}{{ action }} Expense{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'expense_list' %}" class="btn btn-ghost btn-sm">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:700px">
+  <div class="card">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <div class="form-grid">
+
+        <div class="form-group full">
+          <label>Title *</label>
+          {{ form.title }}
+          {% if form.title.errors %}<ul class="errorlist">{% for e in form.title.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Amount (₹) *</label>
+          {{ form.amount }}
+          {% if form.amount.errors %}<ul class="errorlist">{% for e in form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Date *</label>
+          {{ form.date }}
+          {% if form.date.errors %}<ul class="errorlist">{% for e in form.date.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Category</label>
+          {{ form.category }}
+        </div>
+
+        <div class="form-group">
+          <label>Merchant / Store</label>
+          {{ form.merchant }}
+        </div>
+
+        <div class="form-group full">
+          <label>Notes</label>
+          {{ form.notes }}
+        </div>
+
+        <div class="form-group full">
+          <label>Receipt Image (optional)</label>
+{{ form.receipt_file }}
+          {% if expense.receipt_file %}
+          <div style="margin-top:.75rem">
+            <p style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem">Current receipt:</p>
+            <div class="receipt-preview" style="max-width:220px">
+              <img src="{{ expense.receipt_file.url }}" alt="Receipt">
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {% if action == 'Add' %}➕ Save Expense{% else %}✅ Update Expense{% endif %}
+        </button>
+        <a href="{% url 'expense_list' %}" class="btn btn-ghost">Cancel</a>
+        {% if expense %}
+        <a href="{% url 'expense_delete' expense.pk %}" class="btn btn-danger" style="margin-left:auto">🗑 Delete</a>
+        {% endif %}
+      </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}

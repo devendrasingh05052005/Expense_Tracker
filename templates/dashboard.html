@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Dashboard – ReceiptAI{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- Month Selector -->
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div class="page-header" style="gap: 1rem;">
+    <h2 style="margin: 0; font-size: 1.1rem;">{{ period_display }}</h2>
+    <form method="GET" style="display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;">
+      <div class="form-group">
+        <label for="month-select">View Month:</label>
+        <select name="month" id="month-select" class="form-control" onchange="this.form.submit();" style="min-width: 180px;">
+          <option value="overall" {% if selected_month == 'overall' %}selected{% endif %}>📊 Overall</option>
+          {% for month in months_list %}
+            <option value="{{ month.value }}" {% if selected_month == month.value %}selected{% endif %}>
+              {{ month.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Stat Cards -->
+<div class="stats-grid">
+  <div class="stat-card stat-accent-1">
+    <div class="stat-icon">💰</div>
+    <div class="stat-content">
+      <span class="label">Total Spent</span>
+      <span class="value">₹{{ total_spent|floatformat:2 }}</span>
+      <span class="sub">{{ period_display }}</span>
+    </div>
+  </div>
+  <div class="stat-card stat-accent-2">
+    <div class="stat-icon">📊</div>
+    <div class="stat-content">
+      <span class="label">Total Entries</span>
+      <span class="value">{{ count_total }}</span>
+      <span class="sub">{{ period_display }}</span>
+    </div>
+  </div>
+  <div class="stat-card stat-accent-3">
+    <div class="stat-icon">📈</div>
+    <div class="stat-content">
+      <span class="label">Avg per Entry</span>
+      <span class="value">₹{% if count_total > 0 %}{% widthratio total_spent 1 count_total %}{% else %}—{% endif %}</span>
+      <span class="sub">Avg/Entry</span>
+    </div>
+  </div>
+  <div class="stat-card actions-card">
+    <div class="stat-icon">⚡</div>
+    <div class="stat-content">
+      <span class="label">Quick Actions</span>
+      <div class="action-buttons">
+        <a href="{% url 'upload_receipt' %}" class="btn btn-primary btn-sm">
+          <span class="btn-icon">📷</span>
+          <span>Scan Receipt</span>
+        </a>
+        <a href="{% url 'expense_add' %}" class="btn btn-ghost btn-sm">
+          <span class="btn-icon">➕</span>
+          <span>Add Manual</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+  <div class="card chart-card">
+    <div class="chart-header">
+      <div class="chart-title">
+        <span class="chart-icon">📈</span>
+        <span>Spending Trend</span>
+      </div>
+      <div class="chart-badge">Monthly</div>
+    </div>
+    <div class="chart-container">
+      <canvas id="monthlyChart"></canvas>
+    </div>
+  </div>
+  <div class="card chart-card">
+    <div class="chart-header">
+      <div class="chart-title">
+        <span class="chart-icon">🎯</span>
+        <span>By Category</span>
+      </div>
+      <div class="chart-badge">Distribution</div>
+    </div>
+    <div class="chart-container">
+      <canvas id="categoryChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Expenses -->
+<div class="card recent-expenses-card">
+  <div class="card-header">
+    <div class="card-title">
+      <span class="card-icon">🕐</span>
+      <span>Recent Expenses</span>
+    </div>
+    <a href="{% url 'expense_list' %}" class="btn btn-primary btn-sm">
+      <span>View All</span>
+      <span class="btn-arrow">→</span>
+    </a>
+  </div>
+
+  {% if recent %}
+  <div class="expenses-list">
+    {% for e in recent %}
+      <div class="expense-item">
+        <div class="expense-date">
+          <span class="date-day">{{ e.date|date:"d" }}</span>
+          <span class="date-month">{{ e.date|date:"M" }}</span>
+        </div>
+        <div class="expense-details">
+          <div class="expense-header">
+            <h4 class="expense-title">{{ e.title }}</h4>
+            <span class="expense-amount">₹{{ e.amount }}</span>
+          </div>
+          <div class="expense-meta">
+            <span class="expense-merchant">
+              <span class="meta-icon">🏪</span>
+              {{ e.merchant|default:"Unknown" }}
+            </span>
+            <span class="expense-category badge badge-{{ e.category }}">
+              {{ e.get_category_display_icon }} {{ e.get_category_display }}
+            </span>
+          </div>
+        </div>
+        <div class="expense-actions">
+          <a href="{% url 'expense_edit' e.pk %}" class="btn-icon" title="Edit Expense">
+            ✏️
+          </a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state modern-empty">
+    <div class="empty-icon">🧾</div>
+    <h3>No expenses yet</h3>
+    <p>Start by scanning a receipt or adding an expense manually.</p>
+    <div class="empty-actions">
+      <a href="{% url 'upload_receipt' %}" class="btn btn-primary">
+        <span class="btn-icon">📷</span>
+        <span>Scan Receipt</span>
+      </a>
+      <a href="{% url 'expense_add' %}" class="btn btn-ghost">
+        <span class="btn-icon">➕</span>
+        <span>Add Expense</span>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const chartDefaults = {
+  color: '#f0f0f0',
+  borderColor: '#2a2a2a',
+  font: { family: 'Inter', weight: '400' },
+};
+Chart.defaults.color = chartDefaults.color;
+Chart.defaults.borderColor = chartDefaults.borderColor;
+Chart.defaults.font.family = chartDefaults.font.family;
+Chart.defaults.font.size = 12;
+
+// Safe chart init - handle empty data
+const monthlyCtx = document.getElementById('monthlyChart');
+const monthlyLabels = {{ month_labels|safe|default:"[]" }};
+const monthlyAmounts = {{ month_amounts|safe|default:"[]" }};
+if (monthlyLabels.length > 0) {
+  new Chart(monthlyCtx, {
+    type: 'bar',
+    data: {
+      labels: monthlyLabels,
+      datasets: [{ label: 'Spent (₹)', data: monthlyAmounts,
+        backgroundColor: 'rgba(108,99,255,0.25)', borderColor: '#6c63ff',
+        borderWidth: 2, borderRadius: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { grid: { color: '#2a2a38' } },
+                y: { grid: { color: '#2a2a38' }, beginAtZero: true,
+                     ticks: { callback: function(v) { return '₹' + v; } } }
+    }
+  });
+} else {
+  monthlyCtx.parentElement.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center;font-style:italic">No monthly data yet</div>';
+}
+
+const catCtx = document.getElementById('categoryChart');
+const catLabels = {{ cat_labels|safe|default:"[]" }};
+const catAmounts = {{ cat_amounts|safe|default:"[]" }};
+if (catLabels.length > 0) {
+  new Chart(catCtx, {
+    type: 'doughnut',
+    data: { labels: catLabels,
+      datasets: [{ data: catAmounts,
+        backgroundColor: ['#ff9f43','#4cc9f0','#ff6b9d','#ffd166','#43e97b','#a29bfe','#8888a8'],
+        borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 12, font: { size: 12 } } } }
+    }
+  });
+} else {
+  catCtx.parentElement.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center;font-style:italic">No category data yet</div>';
+}
+</script>
+{% endblock %}

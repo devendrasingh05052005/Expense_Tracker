@@ -1,0 +1,117 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ReceiptAI{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/style.css' %}" media="screen">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-wrapper">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h2>Receipt<span>AI</span></h2>
+      <small>Smart Expense Manager</small>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">Main</div>
+      <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <span class="icon">📊</span> Dashboard
+      </a>
+      <a href="{% url 'expense_list' %}" class="nav-link {% if request.resolver_match.url_name == 'expense_list' %}active{% endif %}">
+        <span class="icon">📋</span> All Expenses
+      </a>
+
+      <div class="nav-section">Actions</div>
+      <a href="{% url 'upload_receipt' %}" class="nav-link {% if request.resolver_match.url_name == 'upload_receipt' %}active{% endif %}">
+        <span class="icon">📷</span> Scan Receipt
+      </a>
+      <a href="{% url 'expense_add' %}" class="nav-link {% if request.resolver_match.url_name == 'expense_add' %}active{% endif %}">
+        <span class="icon">➕</span> Add Expense
+      </a>
+
+      <div class="nav-section">Reports</div>
+      <a href="{% url 'download_csv' %}" class="nav-link">
+        <span class="icon">📥</span> Export CSV
+      </a>
+      <a href="{% url 'download_pdf' %}" class="nav-link">
+        <span class="icon">📄</span> Export PDF
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar">{{ request.user.first_name|first|upper }}{{ request.user.last_name|first|upper }}</div>
+      <div class="user-info">
+        <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+        <small><a href="{% url 'logout' %}" style="color:var(--muted)">Sign out</a></small>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main-content">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <button class="hamburger">☰</button>
+        <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_actions %}
+        <a href="{% url 'upload_receipt' %}" class="btn btn-primary btn-sm">📷 Scan Receipt</a>
+        {% endblock %}
+      </div>
+    </header>
+
+    <div class="page-body">
+      {% if messages %}
+      <div class="alert-list">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">
+          {{ message }}
+          <button class="alert-close">✕</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+</div>
+
+<!-- WhatsApp-like AI Chat FAB -->
+<button id="ai-fab" class="ai-fab" title="AI Assistant (Hindi/English commands)">
+  <span class="ai-fab-icon">💬</span>
+</button>
+
+<!-- AI Chat Modal (overlay) -->
+<div id="ai-chat-modal" class="ai-chat-modal" data-ai-agent-url="{% url 'ai_agent' %}">
+  <div class="modal-backdrop"></div>
+  <div class="ai-chat-container">
+    <div class="ai-chat-header">
+      <div>🤖 Expense AI Agent</div>
+      <button id="chat-close" class="chat-close">&times;</button>
+    </div>
+    <div id="chat-messages" class="ai-chat-messages">
+      <div class="message ai">Hi! 👋 Add/query expenses:<br><br>• "200 rs food add kar do"<br>• "total this month"<br>• "list shopping"</div>
+    </div>
+    <div class="ai-chat-input">
+      <input id="chat-input" type="text" placeholder="Type message..." autocomplete="off">
+      <button id="chat-send" class="btn btn-primary btn-sm">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'js/app.js' %}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

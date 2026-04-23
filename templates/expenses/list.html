@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Expenses – ReceiptAI{% endblock %}
+{% block page_title %}All Expenses{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'upload_receipt' %}" class="btn btn-ghost btn-sm">📷 Scan</a>
+<a href="{% url 'expense_add' %}" class="btn btn-primary btn-sm">➕ Add Expense</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter Bar -->
+<form method="get" class="filter-bar">
+  <div class="form-group" style="flex:2;min-width:160px">
+    <label>Search</label>
+    {{ form.search }}
+  </div>
+  <div class="form-group">
+    <label>Category</label>
+    {{ form.category }}
+  </div>
+  <div class="form-group">
+    <label>From</label>
+    {{ form.date_from }}
+  </div>
+  <div class="form-group">
+    <label>To</label>
+    {{ form.date_to }}
+  </div>
+  <div class="form-group">
+          <label>Min ₹</label>
+    {{ form.amount_min }}
+  </div>
+  <div class="form-group">
+          <label>Max ₹</label>
+    {{ form.amount_max }}
+  </div>
+  <div style="display:flex;gap:.5rem;align-items:flex-end">
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    <a href="{% url 'expense_list' %}" class="btn btn-ghost btn-sm">Clear</a>
+  </div>
+</form>
+
+<!-- Summary Row -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem">
+  <span style="color:var(--muted);font-size:.85rem">
+    {{ expenses|length }} expense{{ expenses|length|pluralize }}
+    &nbsp;·&nbsp;
+    Total: <strong style="color:var(--green)">₹{{ total|floatformat:2 }}</strong>
+  </span>
+  <div style="display:flex;gap:.5rem">
+    <a href="{% url 'download_csv' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-ghost btn-sm">⬇ CSV</a>
+    <a href="{% url 'download_pdf' %}" class="btn btn-ghost btn-sm">⬇ PDF</a>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="card" style="padding:0;overflow:hidden">
+  {% if expenses %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Title</th>
+          <th>Merchant</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td style="color:var(--muted);white-space:nowrap">{{ e.date }}</td>
+          <td>
+            <strong>{{ e.title }}</strong>
+            {% if e.receipt_img %}
+              <span title="Has receipt" style="font-size:.75rem;margin-left:.3rem">📎</span>
+            {% endif %}
+            {% if e.notes %}
+              <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">{{ e.notes|truncatechars:50 }}</div>
+            {% endif %}
+          </td>
+          <td style="color:var(--muted)">{{ e.merchant|default:"—" }}</td>
+          <td>
+            <span class="badge badge-{{ e.category }}">
+              {{ e.get_category_display_icon }} {{ e.get_category_display }}
+            </span>
+          </td>
+          <td class="td-amount">₹{{ e.amount }}</td>
+          <td>
+            <div class="td-actions">
+              <a href="{% url 'expense_edit' e.pk %}" class="btn btn-ghost btn-sm">✏️</a>
+              <a href="{% url 'expense_delete' e.pk %}" class="btn btn-danger btn-sm">🗑</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="icon">🔍</div>
+    <h3>No expenses found</h3>
+    <p>Try adjusting your filters or <a href="{% url 'expense_add' %}">add an expense</a>.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

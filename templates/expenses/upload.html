@@ -1,0 +1,169 @@
+
+{% extends 'base.html' %}
+{% block title %}Scan Receipt – ReceiptAI{% endblock %}
+{% block page_title %}Scan Receipt{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'expense_list' %}" class="btn btn-ghost btn-sm">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:800px">
+
+  {% if not ocr %}
+  <!-- ── Step 1: Upload ─────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="card-title">Step 1 — Upload your receipt image</div>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:1.5rem">
+      Supports JPG, PNG, WEBP. The AI will extract the total, date, merchant and suggest a category.
+    </p>
+
+    <form method="post" enctype="multipart/form-data" id="upload-form">
+      {% csrf_token %}
+
+      <div class="upload-zone" id="upload-zone">
+        <div class="icon">📷</div>
+        <p><strong>Click to upload</strong> or drag & drop your receipt</p>
+    <p style="font-size:.78rem;margin-top:.25rem">JPG, PNG, PDF, DOCX up to 10MB</p>
+        {{ form.file }}
+      </div>
+
+      {% if form.file.errors %}
+      <ul class="errorlist" style="margin-top:.5rem">
+        {% for e in form.file.errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+
+      <div style="margin-top:1.25rem;display:flex;gap:.75rem;align-items:center">
+        <button type="submit" class="btn btn-primary" id="scan-btn">
+          🔍 Scan Receipt
+        </button>
+        <span style="color:var(--muted);font-size:.82rem" id="scan-status"></span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Tips -->
+  <div class="card">
+    <div class="card-title">Tips for best results</div>
+    <ul style="color:var(--muted);font-size:.85rem;line-height:2;padding-left:1.25rem">
+      <li>Make sure the receipt is flat and well-lit</li>
+      <li>Capture the full receipt including the total line</li>
+      <li>Higher resolution photos give better OCR accuracy</li>
+      <li>You can always edit the extracted fields before saving</li>
+    </ul>
+  </div>
+
+  {% else %}
+  <!-- ── Step 2: Review OCR Results ─────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="card-title" style="margin-bottom:.75rem">Step 2 — Review extracted data</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+      <!-- Receipt Preview -->
+      <div>
+        <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">Uploaded receipt</p>
+        <div class="receipt-preview">
+          <img src="{{ ocr.file_url }}" alt="Uploaded receipt">
+        </div>
+
+        {% if ocr.raw_text %}
+        <details style="margin-top:.75rem">
+          <summary style="font-size:.78rem;color:var(--muted);cursor:pointer">Show raw OCR text</summary>
+          <div class="ocr-result" style="margin-top:.5rem">{{ ocr.raw_text }}</div>
+        </details>
+        {% endif %}
+      </div>
+
+      <!-- Extracted Fields -->
+      <div>
+        <p style="font-size:.78rem;color:var(--muted);margin-bottom:.75rem">Extracted fields (edit before saving)</p>
+
+        <div class="ocr-fields" style="grid-template-columns:1fr;gap:.6rem">
+          <div class="ocr-field">
+            <div class="fl">💰 Total Amount</div>
+            <div class="fv" style="color:var(--green)">
+              {% if ocr.total %}${{ ocr.total }}{% else %}<span style="color:var(--muted)">Not detected</span>{% endif %}
+            </div>
+          </div>
+          <div class="ocr-field">
+            <div class="fl">📅 Date</div>
+            <div class="fv">{{ ocr.date|default:"Not detected" }}</div>
+          </div>
+          <div class="ocr-field">
+            <div class="fl">🏪 Merchant</div>
+            <div class="fv">{{ ocr.merchant|default:"Not detected" }}</div>
+          </div>
+          <div class="ocr-field">
+            <div class="fl">🏷 Suggested Category</div>
+            <div class="fv">{{ ocr.category|title }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Save as Expense ─────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title" style="margin-bottom:1rem">Step 3 — Confirm & save</div>
+
+    <form method="post" action="{% url 'save_scanned' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="hidden" name="ocr_text" value="{{ ocr.raw_text|escapejs }}">
+
+      <!-- Hidden: reattach the already-uploaded image path -->
+      <input type="hidden" name="receipt_file_path" value="{{ ocr.file_path }}">
+
+      <div class="form-grid">
+
+        <div class="form-group full">
+          <label>Title *</label>
+          {{ expense_form.title }}
+          {% if expense_form.title.errors %}<ul class="errorlist">{% for e in expense_form.title.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Amount ($) *</label>
+          {{ expense_form.amount }}
+          {% if expense_form.amount.errors %}<ul class="errorlist">{% for e in expense_form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Date *</label>
+          {{ expense_form.date }}
+        </div>
+
+        <div class="form-group">
+          <label>Category</label>
+          {{ expense_form.category }}
+        </div>
+
+        <div class="form-group">
+          <label>Merchant</label>
+          {{ expense_form.merchant }}
+        </div>
+
+        <div class="form-group full">
+          <label>Notes</label>
+          {{ expense_form.notes }}
+        </div>
+
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">✅ Save Expense</button>
+        <a href="{% url 'upload_receipt' %}" class="btn btn-ghost">↩ Scan Another</a>
+      </div>
+    </form>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Loading on submit\ndocument.getElementById('upload-form').addEventListener('submit', function() {\n  const btn = document.getElementById('scan-btn');\n  btn.disabled = true;\n  btn.textContent = '⏳ Scanning...';\n});
+</script>
+{% endblock %}

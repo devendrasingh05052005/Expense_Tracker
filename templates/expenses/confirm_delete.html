@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Delete Expense – ReceiptAI{% endblock %}
+{% block page_title %}Delete Expense{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'expense_list' %}" class="btn btn-ghost btn-sm">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div class="confirm-box">
+  <div class="card" style="text-align:center">
+    <div class="danger-icon">🗑️</div>
+    <h2 style="margin-bottom:.5rem">Delete this expense?</h2>
+    <p style="color:var(--muted);margin-bottom:1.5rem">This action cannot be undone.</p>
+
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:1rem;margin-bottom:1.5rem;text-align:left">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.88rem">
+        <div>
+          <div style="color:var(--muted);font-size:.72rem;margin-bottom:.15rem">TITLE</div>
+          <strong>{{ expense.title }}</strong>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:.72rem;margin-bottom:.15rem">AMOUNT</div>
+          <strong style="color:var(--red)">${{ expense.amount }}</strong>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:.72rem;margin-bottom:.15rem">DATE</div>
+          {{ expense.date }}
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:.72rem;margin-bottom:.15rem">CATEGORY</div>
+          <span class="badge badge-{{ expense.category }}">{{ expense.get_category_display }}</span>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" style="display:flex;gap:.75rem;justify-content:center">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Yes, Delete</button>
+      <a href="{% url 'expense_list' %}" class="btn btn-ghost">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}
