@@ -23,11 +23,15 @@ function toggleAiChat() {
 }
 
 function closeAiChat() {
+  console.log('🔴 closeAiChat called');
   if (chatModal) {
     chatModal.style.display = 'none';
+    console.log('✅ Chat modal hidden');
     if (chatInput) {
       chatInput.blur();
     }
+  } else {
+    console.error('❌ Chat modal not found');
   }
 }
 
@@ -130,6 +134,20 @@ if (aiFab) {
 
 if (chatSend) {
   chatSend.addEventListener('click', sendChatMessage);
+}
+
+// Add close button event listener
+const chatClose = document.getElementById('chat-close');
+if (chatClose) {
+  chatClose.addEventListener('click', function(e) {
+    console.log('🎯 Close button clicked!');
+    e.preventDefault();
+    e.stopPropagation();
+    closeAiChat();
+  });
+  console.log('✅ Chat close button event listener attached');
+} else {
+  console.error('❌ Chat close button not found');
 }
 
 if (chatInput) {

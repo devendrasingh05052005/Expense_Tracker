@@ -6,11 +6,8 @@ from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from .agents import get_cached_agent
-import logging
-
-logger = logging.getLogger(__name__)
+from langchain_core.messages import HumanMessage
+from .agents import get_expense_agent
 
 
 @login_required
@@ -27,90 +24,59 @@ def ai_agent_stream(request):
         if not user_message:
             return StreamingHttpResponse('No message provided', status=400)
 
-        # Get cached agent (much faster)
-        agent = get_cached_agent(settings.GROQ_API_KEY)
+        # Initialize agent
+        app = get_expense_agent(settings.GROQ_API_KEY)
         
         inputs = {
             "messages": [HumanMessage(content=user_message)],
             "user_id": request.user.id
         }
+        
+        config = {"configurable": {"thread_id": str(request.user.id)}}
 
-        def stream():
+        def event_stream():
             """Stream AI responses in Server-Sent Events format"""
             try:
-                seen_content = set()  # Track what we've already sent
-                
-                logger.info(f"🟢 Starting stream: user_message='{user_message}'")
-                
-                # Invoke agent and collect all updates
-                for output in agent.stream(inputs):
-                    try:
-                        if not output:
-                            logger.debug("Empty output, skipping")
-                            continue
-                        
-                        logger.debug(f"Processing nodes: {list(output.keys())}")
-                        
-                        # output = {node_name: {'messages': [...]}}
-                        for node_name, node_out in output.items():
-                            if not isinstance(node_out, dict) or 'messages' not in node_out:
-                                logger.debug(f"Skipping {node_name} - no messages")
-                                continue
-                            
-                            messages = node_out.get('messages', [])
-                            logger.debug(f"Node '{node_name}' has {len(messages)} messages")
-                            
-                            # Process ALL messages, but only send new ones
-                            for msg in messages:
-                                msg_type = type(msg).__name__
-                                
-                                # Send AI text messages (if not already sent)
-                                if isinstance(msg, AIMessage):
-                                    msg_content = msg.content
-                                    if msg_content and msg_content not in seen_content:
-                                        seen_content.add(msg_content)
-                                        logger.info(f"📤 Sending AIMessage: {msg_content[:60]}")
-                                        yield f"data: {json.dumps({'type': 'text', 'content': msg_content})}\n\n"
-                                    else:
-                                        logger.debug(f"Skipping AIMessage (duplicate or empty)")
-                                
-                                # Send tool execution results
-                                elif isinstance(msg, ToolMessage):
-                                    content = str(msg.content) if msg.content else "(empty)"
-                                    if content and content not in seen_content:
-                                        seen_content.add(content)
-                                        logger.info(f"📤 Sending ToolMessage: {content[:60]}")
-                                        yield f"data: {json.dumps({'type': 'tool_result', 'content': content})}\n\n"
-                                    else:
-                                        logger.debug(f"Skipping ToolMessage (duplicate or empty)")
+                for chunk, metadata in app.stream(inputs, config=config, stream_mode="messages"):
+                    # Check if chunk has content
+                    if hasattr(chunk, 'content') and chunk.content:
+                        # Format as SSE: "data: {json}\n\n"
+                        chunk_data = {
+                            'content': chunk.content,
+                            'type': 'message'
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
                     
-                    except Exception as e:
-                        logger.exception(f"❌ Error in stream loop: {e}")
-                        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-                
-                logger.info(f"🔴 Stream complete - sent {len(seen_content)} unique messages")
-                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                    # Handle tool execution results
+                    elif hasattr(chunk, 'tool_calls'):
+                        chunk_data = {
+                            'tool_calls': chunk.tool_calls,
+                            'type': 'tool_call'
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
                         
             except Exception as e:
-                logger.exception(f"❌ Stream error: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                error_data = {
+                    'error': str(e),
+                    'type': 'error'
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
 
         return StreamingHttpResponse(
-            stream(),
+            event_stream(),
             content_type='text/event-stream',
             headers={
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Cache-Control'
             }
         )
 
     except Exception as e:
-        logger.exception(f"Request handling error: {e}")
         error_data = {
-            'type': 'error',
-            'error': str(e)
+            'error': f'Streaming error: {str(e)}',
+            'type': 'stream_error'
         }
         
         def error_stream():

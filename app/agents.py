@@ -1,10 +1,8 @@
 import os
-import re
-import logging
 from typing import Annotated, TypedDict, List, Optional
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -12,25 +10,6 @@ from django.db.models import Sum, Q, Count, Avg
 from django.utils import timezone
 from decimal import Decimal
 from .models import Expense
-
-logger = logging.getLogger(__name__)
-
-# --- Agent Caching for Performance ---
-_AGENT_CACHE = None
-
-def get_cached_agent(api_key: str):
-    """Get cached agent to avoid recompiling on every request"""
-    global _AGENT_CACHE
-    if _AGENT_CACHE is None:
-        logger.info("🔧 Creating new agent (cache miss)")
-        _AGENT_CACHE = get_expense_agent(api_key)
-    return _AGENT_CACHE
-
-def clear_agent_cache():
-    """Clear the cached agent - call when tool definitions change"""
-    global _AGENT_CACHE
-    _AGENT_CACHE = None
-    logger.warning("🔄 Agent cache cleared - tools will be rebuilt")
 
 # --- 1. State Definition ---
 class AgentState(TypedDict):
@@ -152,89 +131,83 @@ def get_spending_stats(user_id: int, period: Optional[str] = "this_month", categ
     }
 
 @tool
-def add_expense(user_id: int, amount: float, category: str, date_str: Optional[str] = None) -> str:
+def add_expense(user_id: int, amount: float, category: str, date: str = None, description: str = None):
     """
     Add a new expense to the database.
     
     Args:
-        user_id: ID of the user (REQUIRED)
-        amount: Amount spent in rupees (REQUIRED)
-        category: Category of expense - MUST be one of: food, travel, shopping, bills, health, entertainment, others (REQUIRED)
-        date_str: Date in DD-MM-YYYY format (e.g., '05-05-2002'), or leave empty for today
+        user_id: The ID of the user
+        amount: The amount spent
+        category: Category of expense (food, travel, shopping, bills, health, entertainment, others)
+        date: Date of expense (YYYY-MM-DD format or 'today')
+        description: Optional description/title for the expense
     
     Returns:
         Success message with expense details
     """
     try:
         # Parse date
-        if date_str and date_str.strip():
-            try:
-                # Try DD-MM-YYYY format
-                expense_date = timezone.datetime.strptime(date_str.strip(), '%d-%m-%Y').date()
-            except:
-                try:
-                    # Try YYYY-MM-DD format
-                    expense_date = timezone.datetime.strptime(date_str.strip(), '%Y-%m-%d').date()
-                except:
-                    # Default to today if parsing fails
-                    expense_date = timezone.now().date()
-        else:
-            # Use today's date if not provided
+        if date == 'today' or not date:
             expense_date = timezone.now().date()
-        
-        # Description is just the category name
-        desc = f"{category} expense"
+        else:
+            try:
+                expense_date = timezone.datetime.strptime(date, '%Y-%m-%d').date()
+            except:
+                expense_date = timezone.now().date()
         
         # Create expense
         expense = Expense.objects.create(
             user_id=user_id,
             amount=Decimal(str(amount)),
             category=category.lower(),
-            title=desc,
+            title=description or f'{category} expense',
             date=expense_date
         )
         
-        return f"Successfully added expense: ₹{amount} for {category} on {expense_date.strftime('%d-%m-%Y')}"
+        return f"Successfully added expense: ${amount} for {category} on {expense_date.strftime('%Y-%m-%d')}"
         
     except Exception as e:
         return f"Error adding expense: {str(e)}"
 
 @tool
-def delete_expense(user_id: int, expense_id: Optional[int] = None, delete_last: bool = False):
+def delete_expense(user_id: int, expense_id: Optional[int] = None, delete_last: Optional[bool] = False):
     """
-    Delete an expense. Choose ONE deletion method: either expense_id OR delete_last=true.
-    NOTE: Cannot delete all expenses at once. Only deletes one expense per request.
+    Delete an expense. ONLY use if user explicitly says DELETE/REMOVE/HATAYA.
     
     Args:
         user_id: The ID of the user (REQUIRED)
-        expense_id: Specific expense ID to delete (set to 0 to skip, use delete_last instead)
-        delete_last: Set to true to delete the most recent expense (use this OR expense_id, not both)
+        expense_id: Specific expense ID to delete (Optional)
+        delete_last: Set to True to delete the most recent expense (Optional)
     
     Returns:
-        Success message with deleted expense details, or error if deletion failed
+        Success message with deleted expense details
     """
     try:
-        # Agar user 'all' bole toh mana kar do system prompt ke through, 
-        # par tool ko crash mat hone do.
         if delete_last:
-            expense = Expense.objects.filter(user_id=user_id).order_by('-id').first()
+            # Delete the most recent expense
+            expense = Expense.objects.filter(user_id=user_id).order_by('-date').first()
         elif expense_id:
+            # Delete specific expense
             expense = Expense.objects.filter(user_id=user_id, id=expense_id).first()
         else:
-            return "Please specify which expense to delete (last one or a specific ID)."
+            return "Error: Either provide expense_id or set delete_last=True"
         
         if not expense:
-            return "No matching expense found."
-
-        details = f"{expense.title} (${expense.amount})"
+            return "No expense found to delete"
+        
+        # Store details before deletion
+        details = f"${expense.amount} for {expense.category} on {expense.date.strftime('%Y-%m-%d')}"
+        
+        # Delete the expense
         expense.delete()
-        return f"Successfully deleted: {details}"
+        
+        return f"Successfully deleted expense: {details}"
         
     except Exception as e:
         return f"Error deleting expense: {str(e)}"
 
 @tool
-def update_expense(user_id: int, expense_id: int, amount: Optional[float] = None, category: Optional[str] = None, date: Optional[str] = None, description: Optional[str] = None):
+def update_expense(user_id: int, expense_id: int, amount: float = None, category: str = None, date: str = None, description: str = None):
     """
     Update an existing expense in the database.
     
@@ -302,13 +275,14 @@ def get_expense_agent(api_key: str):
     Returns:
         Compiled LangGraph agent
     """
-    # Initialize Groq Llama 3.1 8B (using current supported model)
+    # Initialize Groq Llama 3 (using current supported model)
     llm = ChatGroq(
         groq_api_key=api_key,
         model_name="llama-3.1-8b-instant",
-        temperature=0
+        temperature=0  # Critical for deterministic tool calling
     )
 
+    # Define available tools
     tools = [
         query_expenses,
         get_spending_stats,
@@ -327,141 +301,64 @@ def get_expense_agent(api_key: str):
         # Inject system prompt if it's the first message
         if not any(isinstance(m, SystemMessage) for m in messages):
             sys_msg = SystemMessage(content=(
-                f"You are a helpful Finance Assistant for UID {state['user_id']}. ALWAYS respond with a SHORT friendly message!\n\n"
-                "CRITICAL - UNDERSTAND USER INTENT FIRST:\n"
-                "🗑️ DELETE/REMOVE/CLEAR/UNDO → use delete_expense ONLY (never get_spending_stats!)\n"
-                "➕ ADD/RECORD/SPENT/EXPENSE → use add_expense\n"
-                "📊 STATS/TOTAL/REPORT/SUMMARY → use get_spending_stats\n"
-                "🔍 SEARCH/LIST/QUERY/SHOW → use query_expenses\n"
-                "✏️ UPDATE/MODIFY/CHANGE → use update_expense\n\n"
-                "TOOL PARAMETER RULES:\n"
-                "add_expense: MUST have user_id, amount (float), category\n"
-                "  - Optional: date_str in DD-MM-YYYY format (e.g., '05-05-2002')\n"
-                "  - If no date: uses today\n"
-                "delete_expense: MUST have user_id, AND (expense_id OR delete_last=true)\n"
-                "  - For 'delete last': use delete_last=true\n"
-                "  - For 'delete all': say 'Cannot delete all - only one at a time'\n"
-                "query_expenses: user_id, optional: query_str, category, period\n"
-                "get_spending_stats: user_id, optional: period, category\n"
-                "update_expense: user_id, expense_id, optional: amount/category/date/description\n\n"
-                "KEYWORD MAPPING:\n"
-                "DELETE keywords: delete, remove, clear, undo, erase, destroy, discard\n"
-                "ADD keywords: add, record, spent, expense, paid, charge, payment\n"
-                "STATS keywords: stats, total, how much, report, summary, spending\n"
-                "SEARCH keywords: search, list, show, find, query, which, recent\n"
-                "CATEGORY: mobile/recharge → bills, car/petrol/fuel → travel, movie/game → entertainment\n\n"
-                "CRITICAL: If user says DELETE, ALWAYS call delete_expense, never call get_spending_stats!\n"
+                f"You are a DATA REPORTER for user ID: {state['user_id']}. "
+                "Your job is to call tools and report their output EXACTLY as returned.\n"
+                "RULES:\n"
+                "1. DO NOT apologize. DO NOT explain how tools work.\n"
+                "2. DO NOT add extra information. Report only what tools return.\n"
+                "3. DO NOT say 'however', 'I must note', 'the actual output would be'.\n"
+                "4. For 'kitna kharcha', 'total expense' → ONLY use get_spending_stats\n"
+                "5. For 'find', 'show' → ONLY use query_expenses\n"
+                "6. For 'add', 'kharch kiya' → ONLY use add_expense\n"
+                "7. For 'delete', 'remove', 'hataya' → ONLY use delete_expense\n"
+                "8. For 'update', 'change', 'modify' → ONLY use update_expense\n"
+                "9. Call only ONE tool per response.\n"
+                "10. If user asks about travel expenses, use query_expenses with category='travel'\n"
+                "11. Valid categories: food, travel, shopping, bills, health, entertainment, others\n"
+                "12. Valid dates: today, yesterday, this_month, last_month, YYYY-MM-DD\n"
+                "13. If confused, ask for clarification.\n"
+                "\n"
+                "AVAILABLE TOOLS:\n"
+                "- query_expenses: Search/list expenses\n"
+                "- get_spending_stats: Calculate totals and statistics\n"
+                "- add_expense: Add new expense\n"
+                "- update_expense: Modify existing expense\n"
             ))
             messages = [sys_msg] + messages
         
         try:
-            # Check if last message is a ToolMessage - if so, just respond with acknowledgment
-            last_msg = messages[-1]
-            if isinstance(last_msg, ToolMessage):
-                # Tool was just executed, generate a friendly response
-                logger.info(f"Last message is ToolMessage, generating response...")
-                try:
-                    response = llm_with_tools.invoke(messages, max_tokens=100)
-                    # Ensure we got a response with content
-                    if response and hasattr(response, 'content') and response.content:
-                        logger.info(f"✅ Generated response after tool: {response.content[:60]}")
-                        return {"messages": [response]}
-                except Exception as e:
-                    logger.error(f"❌ Error generating response: {str(e)}")
-                    return {"messages": [AIMessage(content="Sorry, I had trouble processing that. Please try again.")]}
-
-            # Use limited max_tokens for faster reasoning
-            response = llm_with_tools.invoke(messages, max_tokens=150)
+            response = llm_with_tools.invoke(messages)
             
-            # --- CRITICAL ARGUMENT CLEANER & VALIDATOR ---
+            # Validate tool calls
             if response.tool_calls:
-                # Get the user's message for intent detection
-                user_msg = ""
-                for m in reversed(messages):
-                    if isinstance(m, HumanMessage):
-                        user_msg = m.content.lower()
-                        break
+                valid_tools = ['query_expenses', 'get_spending_stats', 'add_expense', 'delete_expense', 'update_expense']
                 
-                # Intent detection keywords
-                add_keywords = ['add', 'spent', 'kharch', 'expense', 'payment', 'charge', 'rs', '₹', 'rupees', 'recorded', 'paid']
-                delete_keywords = ['delete', 'remove', 'undo', 'cancel', 'revert', 'clear', 'erase', 'destroy', 'discard']
-                delete_all_keywords = ['all', 'poora', 'sab', 'entire', 'everything', 'whole']
-                stats_keywords = ['stats', 'total', 'how much', 'report', 'summary', 'spending']
-                
-                user_wants_add = any(keyword in user_msg for keyword in add_keywords)
-                user_wants_delete = any(keyword in user_msg for keyword in delete_keywords)
-                user_wants_delete_all = any(keyword in user_msg for keyword in delete_all_keywords)
-                user_wants_stats = any(keyword in user_msg for keyword in stats_keywords)
-                
-                # Handle "delete all" - not supported, send friendly message
-                if user_wants_delete and user_wants_delete_all:
-                    logger.info(f"User wants to delete ALL expenses - not supported. Returning helpful message.")
-                    return {"messages": [AIMessage(content="❌ Can't delete all at once for safety! But I can:\n• Delete the last expense: say 'delete last'\n• Delete a specific expense (if you know ID): say 'delete ID 5'\nBetter safe than sorry! 😊")]}
-                
-                # Force DELETE tool if user clearly said "delete" (but not "delete all")
-                if user_wants_delete and not user_wants_add and not user_wants_delete_all:
-                    for tool_call in response.tool_calls:
-                        if tool_call.get('name') != 'delete_expense':
-                            logger.warning(f"User said DELETE but LLM called {tool_call.get('name')}. Forcing delete_expense.")
-                            tool_call['name'] = 'delete_expense'
-                            tool_call['args'] = {
-                                'user_id': state['user_id'],
-                                'delete_last': True  # Default to deleting last expense
-                            }
-                
-                # 1. Force only first tool call for speed
-                if len(response.tool_calls) > 1:
-                    response.tool_calls = [response.tool_calls[0]]
-                
-                # 2. Strict argument validation per tool
+                # Filter out invalid tool calls
+                valid_tool_calls = []
                 for tool_call in response.tool_calls:
-                    args = tool_call.get('args', {})
-                    t_name = tool_call.get('name')
-                    
-                    # Safety: If user clearly wants to ADD but delete was called, override it
-                    if user_wants_add and not user_wants_delete and t_name == 'delete_expense':
-                        # User said ADD but model called DELETE - switch to add_expense
-                        # Extract amount and category from context if possible
-                        amount_match = re.search(r'(\d+(?:\.\d+)?)', user_msg)
-                        if amount_match:
-                            amount = float(amount_match.group(1))
-                            # Guess category from message
-                            category = 'others'
-                            for keyword in ['petrol', 'gas', 'fuel']:
-                                if keyword in user_msg:
-                                    category = 'travel'
-                                    break
-                            # Create new tool call for add_expense
-                            tool_call['name'] = 'add_expense'
-                            tool_call['args'] = {
-                                'user_id': state['user_id'],
-                                'amount': amount,
-                                'category': category,
-                                'description': f"{category} expense"
-                            }
-
-                    # Delete tool - ensure valid args only
-                    if t_name == 'delete_expense':
-                        valid_keys = {'user_id', 'expense_id', 'delete_last'}
-                        # Keep only valid keys with non-None values
-                        new_args = {k: v for k, v in args.items() if k in valid_keys and v is not None}
-                        tool_call['args'] = new_args
-                        # Ensure at least one deletion method
-                        if not new_args.get('expense_id') and not new_args.get('delete_last'):
-                            tool_call['args']['delete_last'] = False
-                    
-                    # For add_expense, don't modify - let it go as-is from LLM
-                    # The system prompt ensures valid args
-                    
-                    # For other tools, just remove None values
-                    elif t_name not in ['add_expense']:
-                        tool_call['args'] = {k: v for k, v in args.items() if v is not None}
-            # --- END ARGUMENT CLEANER ---
+                    if tool_call.get('name') in valid_tools:
+                        valid_tool_calls.append(tool_call)
+                
+                if not valid_tool_calls:
+                    # All tool calls were invalid
+                    from langchain_core.messages import AIMessage
+                    error_response = "I tried to use an unavailable tool. Let me help you differently. What would you like to know about your expenses?"
+                    return {"messages": [AIMessage(content=error_response)]}
+                
+                # Keep only valid tool calls
+                response.tool_calls = valid_tool_calls
+                
+                # Check if multiple tools are being called
+                if len(response.tool_calls) > 1:
+                    # Create a new response with only the first tool call
+                    first_tool = response.tool_calls[0]
+                    response.tool_calls = [first_tool]
             
             return {"messages": [response]}
             
         except Exception as e:
             # Handle tool calling errors gracefully
+            from langchain_core.messages import AIMessage
             error_response = f"I encountered an error while processing your request: {str(e)}. Please try rephrasing your request."
             return {"messages": [AIMessage(content=error_response)]}
 
@@ -482,5 +379,6 @@ def get_expense_agent(api_key: str):
 
     workflow.add_conditional_edges("agent", router, {"continue": "action", "end": END})
     workflow.add_edge("action", "agent")
+    workflow.add_edge("agent", END)
 
     return workflow.compile()

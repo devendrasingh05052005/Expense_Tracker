@@ -28,69 +28,39 @@
 <!-- Stat Cards -->
 <div class="stats-grid">
   <div class="stat-card stat-accent-1">
-    <div class="stat-icon">💰</div>
-    <div class="stat-content">
-      <span class="label">Total Spent</span>
-      <span class="value">₹{{ total_spent|floatformat:2 }}</span>
-      <span class="sub">{{ period_display }}</span>
-    </div>
+    <span class="label">Total Spent</span>
+    <span class="value">₹{{ total_spent|floatformat:2 }}</span>
+    <span class="sub">{{ period_display }}</span>
   </div>
   <div class="stat-card stat-accent-2">
-    <div class="stat-icon">📊</div>
-    <div class="stat-content">
-      <span class="label">Total Entries</span>
-      <span class="value">{{ count_total }}</span>
-      <span class="sub">{{ period_display }}</span>
-    </div>
+    <span class="label">Total Entries</span>
+    <span class="value">{{ count_total }}</span>
+    <span class="sub">{{ period_display }}</span>
   </div>
   <div class="stat-card stat-accent-3">
-    <div class="stat-icon">📈</div>
-    <div class="stat-content">
-      <span class="label">Avg per Entry</span>
-      <span class="value">₹{% if count_total > 0 %}{% widthratio total_spent 1 count_total %}{% else %}—{% endif %}</span>
-      <span class="sub">Avg/Entry</span>
-    </div>
+    <span class="label">Avg per Entry</span>
+    <span class="value">₹{% if count_total > 0 %}{% widthratio total_spent 1 count_total %}{% else %}—{% endif %}</span>
+    <span class="sub">Avg/Entry</span>
   </div>
-  <div class="stat-card actions-card">
-    <div class="stat-icon">⚡</div>
-    <div class="stat-content">
-      <span class="label">Quick Actions</span>
-      <div class="action-buttons">
-        <a href="{% url 'upload_receipt' %}" class="btn btn-primary btn-sm">
-          <span class="btn-icon">📷</span>
-          <span>Scan Receipt</span>
-        </a>
-        <a href="{% url 'expense_add' %}" class="btn btn-ghost btn-sm">
-          <span class="btn-icon">➕</span>
-          <span>Add Manual</span>
-        </a>
-      </div>
+  <div class="stat-card">
+    <span class="label">Quick Actions</span>
+    <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">
+      <a href="{% url 'upload_receipt' %}" class="btn btn-primary btn-sm">📷 Scan Receipt</a>
+      <a href="{% url 'expense_add' %}" class="btn btn-ghost btn-sm">➕ Add Manual</a>
     </div>
   </div>
 </div>
 
 <!-- Charts -->
 <div class="charts-grid">
-  <div class="card chart-card">
-    <div class="chart-header">
-      <div class="chart-title">
-        <span class="chart-icon">📈</span>
-        <span>Spending Trend</span>
-      </div>
-      <div class="chart-badge">Monthly</div>
-    </div>
+  <div class="card">
+    <div class="card-title">Spending Trend</div>
     <div class="chart-container">
       <canvas id="monthlyChart"></canvas>
     </div>
   </div>
-  <div class="card chart-card">
-    <div class="chart-header">
-      <div class="chart-title">
-        <span class="chart-icon">🎯</span>
-        <span>By Category</span>
-      </div>
-      <div class="chart-badge">Distribution</div>
-    </div>
+  <div class="card">
+    <div class="card-title">By Category</div>
     <div class="chart-container">
       <canvas id="categoryChart"></canvas>
     </div>
@@ -98,64 +68,52 @@
 </div>
 
 <!-- Recent Expenses -->
-<div class="card recent-expenses-card">
-  <div class="card-header">
-    <div class="card-title">
-      <span class="card-icon">🕐</span>
-      <span>Recent Expenses</span>
-    </div>
-    <a href="{% url 'expense_list' %}" class="btn btn-primary btn-sm">
-      <span>View All</span>
-      <span class="btn-arrow">→</span>
-    </a>
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+    <div class="card-title" style="margin:0">Recent Expenses</div>
+    <a href="{% url 'expense_list' %}" class="btn btn-ghost btn-sm">View All →</a>
   </div>
 
   {% if recent %}
-  <div class="expenses-list">
-    {% for e in recent %}
-      <div class="expense-item">
-        <div class="expense-date">
-          <span class="date-day">{{ e.date|date:"d" }}</span>
-          <span class="date-month">{{ e.date|date:"M" }}</span>
-        </div>
-        <div class="expense-details">
-          <div class="expense-header">
-            <h4 class="expense-title">{{ e.title }}</h4>
-            <span class="expense-amount">₹{{ e.amount }}</span>
-          </div>
-          <div class="expense-meta">
-            <span class="expense-merchant">
-              <span class="meta-icon">🏪</span>
-              {{ e.merchant|default:"Unknown" }}
-            </span>
-            <span class="expense-category badge badge-{{ e.category }}">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Title</th>
+          <th>Merchant</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in recent %}
+        <tr>
+          <td>{{ e.date }}</td>
+          <td><strong>{{ e.title }}</strong></td>
+          <td style="color:var(--muted)">{{ e.merchant|default:"—" }}</td>
+          <td>
+            <span class="badge badge-{{ e.category }}">
               {{ e.get_category_display_icon }} {{ e.get_category_display }}
             </span>
-          </div>
-        </div>
-        <div class="expense-actions">
-          <a href="{% url 'expense_edit' e.pk %}" class="btn-icon" title="Edit Expense">
-            ✏️
-          </a>
-        </div>
-      </div>
-    {% endfor %}
+          </td>
+          <td class="td-amount">₹{{ e.amount }}</td>
+          <td>
+            <div class="td-actions">
+              <a href="{% url 'expense_edit' e.pk %}" class="btn btn-ghost btn-sm">Edit</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
-  <div class="empty-state modern-empty">
-    <div class="empty-icon">🧾</div>
+  <div class="empty-state" style="padding:2rem">
+    <div class="icon">🧾</div>
     <h3>No expenses yet</h3>
     <p>Start by scanning a receipt or adding an expense manually.</p>
-    <div class="empty-actions">
-      <a href="{% url 'upload_receipt' %}" class="btn btn-primary">
-        <span class="btn-icon">📷</span>
-        <span>Scan Receipt</span>
-      </a>
-      <a href="{% url 'expense_add' %}" class="btn btn-ghost">
-        <span class="btn-icon">➕</span>
-        <span>Add Expense</span>
-      </a>
-    </div>
   </div>
   {% endif %}
 </div>
@@ -165,19 +123,18 @@
 {% block extra_js %}
 <script>
 const chartDefaults = {
-  color: '#f0f0f0',
-  borderColor: '#2a2a2a',
-  font: { family: 'Inter', weight: '400' },
+  color: '#8888a8',
+  borderColor: '#2a2a38',
+  font: { family: 'DM Sans' },
 };
 Chart.defaults.color = chartDefaults.color;
 Chart.defaults.borderColor = chartDefaults.borderColor;
 Chart.defaults.font.family = chartDefaults.font.family;
-Chart.defaults.font.size = 12;
 
 // Safe chart init - handle empty data
 const monthlyCtx = document.getElementById('monthlyChart');
-const monthlyLabels = {{ month_labels|safe|default:"[]" }};
-const monthlyAmounts = {{ month_amounts|safe|default:"[]" }};
+const monthlyLabels = {{ month_labels|safe|default:'[]' }};
+const monthlyAmounts = {{ month_amounts|safe|default:'[]' }};
 if (monthlyLabels.length > 0) {
   new Chart(monthlyCtx, {
     type: 'bar',
@@ -191,7 +148,7 @@ if (monthlyLabels.length > 0) {
       responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
       scales: { x: { grid: { color: '#2a2a38' } },
                 y: { grid: { color: '#2a2a38' }, beginAtZero: true,
-                     ticks: { callback: function(v) { return '₹' + v; } } }
+                     ticks: { callback: v => '₹' + v } } }
     }
   });
 } else {
@@ -199,8 +156,8 @@ if (monthlyLabels.length > 0) {
 }
 
 const catCtx = document.getElementById('categoryChart');
-const catLabels = {{ cat_labels|safe|default:"[]" }};
-const catAmounts = {{ cat_amounts|safe|default:"[]" }};
+const catLabels = {{ cat_labels|safe|default:'[]' }};
+const catAmounts = {{ cat_amounts|safe|default:'[]' }};
 if (catLabels.length > 0) {
   new Chart(catCtx, {
     type: 'doughnut',
